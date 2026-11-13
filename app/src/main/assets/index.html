@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frame Coach Live</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+<style>
+:root{--bg:#000;--panel:rgba(22,22,26,.82);--ink:#f5f5f7;--mute:#9a9aa3;--gold:#ffd23f;--ok:#37e07a;--bad:#ff5a5f;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000}}
+:root[data-theme="dark"]{--bg:#000}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.35 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#app{height:100%;display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;justify-content:space-between}
+.chip{border:0;background:#1d1d22;color:var(--ink);border-radius:999px;padding:7px 12px;font:600 12px inherit;font-family:inherit}
+.chip.on{background:var(--gold);color:#000}
+#main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+#stage{position:relative;overflow:hidden;border-radius:14px;background:#111}
+#stage video,#stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:50% 50%}
+#ov{position:absolute;inset:0;width:100%;height:100%}
+#pill{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);max-width:92%;white-space:nowrap;background:var(--panel);backdrop-filter:blur(8px);padding:7px 14px;border-radius:999px;font-weight:600;font-size:13px;color:var(--gold)}
+#pill.ok{color:var(--ok)}#pill.bad{color:var(--bad)}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+#meters{display:flex;gap:10px;align-items:center;padding:8px 16px}
+.m{flex:1;font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.m i{display:block;height:4px;border-radius:3px;background:#2a2a30;margin-top:4px;overflow:hidden}
+.m b{display:block;height:100%;width:0;background:var(--gold);transition:width .15s}
+#ring{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font:700 15px inherit;font-family:inherit;background:conic-gradient(var(--gold) calc(var(--s,0)*1%),#2a2a30 0)}
+#ring span{width:36px;height:36px;border-radius:50%;background:var(--bg);display:grid;place-items:center}
+#sheet{margin:0 12px;background:#17171b;border-radius:16px;padding:12px 14px;max-height:34%;overflow:auto}
+#sheet h3{margin:0 0 4px;font-size:15px;display:flex;justify-content:space-between;gap:8px}
+#sheet p{margin:2px 0;color:var(--mute);font-size:12.5px}#sheet p b{color:var(--ink);font-weight:600}
+#ideas{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+footer{padding:8px 16px 12px}
+#zoom{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
+#bar{display:flex;align-items:center;justify-content:space-between}
+#thumb{width:48px;height:48px;border-radius:10px;background:#1d1d22 center/cover;border:1px solid #333}
+#shut{width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:#fff;box-shadow:inset 0 0 0 4px #000}
+#shut:active{transform:scale(.94)}
+#scan{width:48px;height:48px;border-radius:50%;border:0;background:#2b2410;color:var(--gold);font-size:22px}
+#scan.busy{animation:p 1s infinite}@keyframes p{50%{opacity:.4}}
+#start,#view{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;text-align:center;padding:28px;z-index:9}
+#start h1{margin:0;font-size:26px}#start p{color:var(--mute);margin:0;max-width:320px}
+.big{border:0;border-radius:14px;padding:14px 22px;font:700 16px inherit;font-family:inherit;background:var(--gold);color:#000}
+.big.alt{background:#222;color:var(--ink)}
+#view img{max-width:100%;max-height:70%;border-radius:12px}
+[hidden]{display:none!important}
+</style></head><body>
+<div id="app">
+ <header><button class="chip" id="ar">3:4</button><button class="chip on" id="gr">Grid</button><button class="chip" id="au">Auto-shutter</button><button class="chip on" id="np" hidden>📷 New photo</button><span class="chip" id="lv">Level –</span></header>
+ <div id="main"><div id="stage"><video id="v" playsinline muted autoplay></video><img id="st" alt="" hidden><canvas id="ov"></canvas><div id="pill">Starting…</div><div id="flash"></div></div></div>
+ <div id="meters"><div class="m">Sharp<i><b id="m1"></b></i></div><div class="m">Light<i><b id="m2"></b></i></div><div class="m">Steady<i><b id="m3"></b></i></div><div id="ring"><span id="sc">–</span></div></div>
+ <div id="sheet" hidden></div>
+ <footer><div id="zoom"></div><div id="bar"><div id="thumb"></div><button id="shut" aria-label="Take photo"></button><button id="scan" aria-label="Find my shot">✦</button></div></footer>
+</div>
+<div id="start"><h1>Frame Coach</h1><p>Point your camera. The AI finds the best subject on its own, shows you where to move, zooms for you, and tells you when it’s perfect. Tap ✦ to pause or restart it.</p><button class="big" id="go">Start camera</button><button class="big alt" id="snap">Take a photo with my phone camera</button><button class="big alt" id="pick">Choose a photo from my gallery</button><input id="file" type="file" accept="image/*" hidden><input id="cam" type="file" accept="image/*" capture="environment" hidden><p id="err" style="color:var(--bad);font-weight:600"></p></div>
+<div id="view" hidden><img id="vi" alt="Your photo"><button class="big" id="sv">Save photo</button><button class="big alt" id="cl">Close</button></div>
+<script>
+const $=s=>document.querySelector(s),v=$('#v'),st=$('#st'),ov=$('#ov'),stage=$('#stage'),pill=$('#pill');
+const ARS=[[.75,'3:4'],[.8,'4:5'],[1,'1:1'],[.5625,'9:16']];
+const S={ar:.75,ai:0,grid:true,auto:false,box:null,d:null,ideal:null,label:'',comp:null,zoom:1,hw:null,dz:1,roll:null,sharp:0,lum:128,clip:0,motion:0,score:0,lockT:0,busy:0,prev:null,still:null,shots:[],cool:0,sample:null,idx:0};
+const cl=(n,a=0,b=1)=>Math.min(b,Math.max(a,+n||0));
+function say(t,c){pill.textContent=t;pill.className=c||''}
+function fit(){const m=$('#main'),W=m.clientWidth-4,H=m.clientHeight-4;let w=Math.min(W,H*S.ar),h=w/S.ar;stage.style.width=w+'px';stage.style.height=h+'px';const r=devicePixelRatio||1;ov.width=w*r;ov.height=h*r}
+addEventListener('resize',fit);
+/* camera */
+async function start(){
+ try{
+  $('#err').textContent='Opening camera…';
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('live camera is blocked in this view');
+  const o=window.DeviceOrientationEvent;if(o&&o.requestPermission)try{await o.requestPermission()}catch(e){}
+  addEventListener('deviceorientation',e=>{if(e.gamma!=null&&Math.abs(e.beta||90)>30)S.roll=e.gamma});
+  const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1440}},audio:false});
+  v.srcObject=s;await v.play();S.track=s.getVideoTracks()[0];
+  const c=S.track.getCapabilities?S.track.getCapabilities():{};if(c.zoom)S.hw=c.zoom;
+  $('#start').hidden=true;buildZoom();ready();
+ }catch(e){$('#err').textContent='The live camera is blocked here ('+(e&&e.name||'error')+'). Tap “Take a photo with my phone camera” below instead. It works the same way.'}
+}
+function ready(){fit();loop();draw();loadModel()}
+async function tryAI(){try{S.sample=await claude.use('sample')}catch(e){S.sample=null}}
+function buildZoom(){const z=$('#zoom');z.innerHTML='';const list=[1,2,3,5];if(S.hw&&S.hw.min<=.6)list.unshift(.5);list.forEach(n=>{const b=document.createElement('button');b.className='chip'+(n==1?' on':'');b.textContent=n+'x';b.onclick=()=>setZoom(n);b.dataset.z=n;z.appendChild(b)})}
+function setZoom(n){
+ const lo=S.hw?S.hw.min:1,hi=S.hw?Math.min(S.hw.max,10):5;n=cl(n,lo,hi);const k=n/S.zoom;
+ if(S.box){const [x,y,w,h]=S.box;S.box=[.5+(x-.5)*k,.5+(y-.5)*k,w*k,h*k]}
+ if(S.ideal===null){}
+ S.zoom=n;
+ if(S.hw&&S.track)S.track.applyConstraints({advanced:[{zoom:n}]}).catch(()=>{});
+ else{S.dz=n;(S.still?st:v).style.transform='scale('+n+')'}
+ document.querySelectorAll('#zoom .chip').forEach(b=>b.classList.toggle('on',Math.abs(b.dataset.z-n)<.3));
+}
+/* frame grabbing */
+function src(){return S.still||v}
+function grab(w,full){
+ const s=src(),sw=s.videoWidth||s.naturalWidth,sh=s.videoHeight||s.naturalHeight;if(!sw)return null;
+ let cw=sw,ch=sw/S.ar;if(ch>sh){ch=sh;cw=sh*S.ar}const z=S.hw?1:S.dz;cw/=z;ch/=z;
+ const c=document.createElement('canvas'),W=full?Math.min(2000,Math.round(cw)):w;c.width=W;c.height=Math.round(W/S.ar);
+ c.getContext('2d').drawImage(s,(sw-cw)/2,(sh-ch)/2,cw,ch,0,0,c.width,c.height);return c}
+/* local analysis, about 8 times a second */
+function loop(){setInterval(analyze,120)}
+function analyze(){
+ const W=64,c=grab(W);if(!c)return;const H=c.height,x=c.getContext('2d'),d=x.getImageData(0,0,W,H).data,L=new Float32Array(W*H);
+ let sum=0,clip=0,g=0;
+ for(let i=0;i<W*H;i++){const l=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];L[i]=l;sum+=l;if(l>250)clip++}
+ for(let y=1;y<H;y++)for(let q=1;q<W;q++){g+=Math.abs(L[y*W+q]-L[y*W+q-1])+Math.abs(L[y*W+q]-L[(y-1)*W+q])}
+ S.lum=sum/(W*H);S.clip=clip/(W*H);S.sharp=g/(W*H);
+ let mot=0;
+ if(S.prev&&S.prev.length===L.length&&!S.still){
+  let best=1e9,bx=0,by=0;const R=3;
+  for(let oy=-R;oy<=R;oy++)for(let ox=-R;ox<=R;ox++){let e=0;for(let y=8;y<H-8;y+=2)for(let q=8;q<W-8;q+=2)e+=Math.abs(S.prev[y*W+q]-L[(y+oy)*W+q+ox]);if(e<best-1){best=e;bx=ox;by=oy}}
+  mot=Math.hypot(bx,by);
+  if(S.box&&mot<R*1.4){const b=S.box;S.box=[b[0]+bx/W,b[1]+by/H,b[2],b[3]]}
+ }
+ S.prev=L;S.motion=S.motion*.6+mot*.4;
+ if(S.still)S.motion=0;
+ update(c,d,W,H);
+}
+function update(c,d,W,H){
+ const sh=cl((S.sharp-2)/10),ex=cl(1-Math.abs(S.lum-125)/125-S.clip*3),sd=cl(1-S.motion/1.6);
+ let p=.5;if(S.box&&S.ideal){const cx=S.box[0]+S.box[2]/2,cy=S.box[1]+S.box[3]/2;p=cl(1-Math.hypot(cx-S.ideal[0],cy-S.ideal[1])/.3)}
+ const comp=S.comp==null?.55:S.comp/100,t=100*(.32*p+.26*comp+.14*sh+.14*ex+.14*sd);
+ S.score=S.score*.7+t*.3;
+ $('#m1').style.width=sh*100+'%';$('#m2').style.width=ex*100+'%';$('#m3').style.width=sd*100+'%';
+ $('#sc').textContent=Math.round(S.score);$('#ring').style.setProperty('--s',S.score);
+ $('#lv').textContent=S.roll==null?'Level –':'Level '+(S.roll>0?'+':'')+S.roll.toFixed(1)+'°';
+ S.p=p;S.sh=sh;S.sd=sd;coach();
+}
+function coach(){
+ 
+ if(!S.box)return say(S.live?'Finding your shot…':'Tap ✦ to start');
+ const b=S.box,cx=b[0]+b[2]/2,cy=b[1]+b[3]/2,I=S.ideal||[.5,.5],dx=cx-I[0],dy=cy-I[1],T=.055;
+ if(cx<-.1||cx>1.1||cy<-.1||cy>1.1){S.lockT=0;return say('Lost it — tap ✦ again','bad')}
+ const mv=[];if(Math.abs(dx)>T)mv.push(dx>0?'right':'left');if(Math.abs(dy)>T)mv.push(dy>0?'down':'up');
+ if(mv.length){S.lockT=0;return say('Move your phone '+mv.join(' & '))}
+ if(S.roll!=null&&Math.abs(S.roll)>2.5){S.lockT=0;return say('Straighten the horizon')}
+ if(b[2]<.14&&b[3]<.14){S.lockT=0;return say('Zoom in a little')}
+ if(S.motion>1||S.sh<.15){S.lockT=0;return say('Locked — hold still','')}
+ S.lockT=S.lockT||performance.now();
+ const held=performance.now()-S.lockT;
+ if(S.score>=78){say('Beautiful light — shoot now','ok');if(held>700&&navigator.vibrate&&!S.vb){navigator.vibrate(30);S.vb=1}
+  if(S.auto&&held>900&&performance.now()>S.cool){shoot()}}
+ else say('Almost — keep it steady')
+}
+/* overlay drawing */
+function draw(){
+ const x=ov.getContext('2d'),W=ov.width,H=ov.height,u=W/360;x.clearRect(0,0,W,H);
+ if(S.grid){x.strokeStyle='rgba(255,255,255,.28)';x.lineWidth=u;x.beginPath();[1/3,2/3].forEach(f=>{x.moveTo(W*f,0);x.lineTo(W*f,H);x.moveTo(0,H*f);x.lineTo(W,H*f)});x.stroke()}
+ if(S.ideal){const X=S.ideal[0]*W,Y=S.ideal[1]*H;x.strokeStyle='rgba(255,210,63,.9)';x.lineWidth=1.5*u;x.beginPath();x.arc(X,Y,11*u,0,7);x.moveTo(X-18*u,Y);x.lineTo(X-6*u,Y);x.moveTo(X+6*u,Y);x.lineTo(X+18*u,Y);x.moveTo(X,Y-18*u);x.lineTo(X,Y-6*u);x.moveTo(X,Y+6*u);x.lineTo(X,Y+18*u);x.stroke()}
+ if(S.box){
+  const t=S.box;S.d=S.d||t.slice();S.d=S.d.map((n,i)=>n+(t[i]-n)*.35);const [a,b,w,h]=S.d;
+  const good=S.lockT>0,col=good?'#37e07a':'#ffd23f';
+  x.strokeStyle=col;x.lineWidth=2.5*u;x.beginPath();x.roundRect(a*W,b*H,w*W,h*H,10*u);x.stroke();
+  if(S.label){x.font='600 '+(11*u)+'px sans-serif';const tw=x.measureText(S.label).width+14*u,lx=Math.max(4*u,Math.min(W-tw-4*u,a*W)),ly=Math.min(H-24*u,b*H+h*H+6*u);x.fillStyle='rgba(0,0,0,.7)';x.beginPath();x.roundRect(lx,ly,tw,20*u,8*u);x.fill();x.fillStyle=col;x.fillText(S.label,lx+7*u,ly+14*u)}
+ }
+ if(S.roll!=null){const lv=Math.abs(S.roll)<1.5;x.save();x.translate(W/2,H/2);x.rotate(-S.roll*Math.PI/180);x.strokeStyle=lv?'#37e07a':'rgba(255,255,255,.55)';x.lineWidth=2*u;x.beginPath();x.moveTo(-W*.14,0);x.lineTo(-W*.05,0);x.moveTo(W*.05,0);x.lineTo(W*.14,0);x.stroke();x.restore()}
+ requestAnimationFrame(draw)
+}
+/* AI scan */
+const PROMPT=`You are a world-class photographer coaching someone's live framing. The image is the current camera view. Use normalized coordinates: x and y from 0 to 1, origin top-left, boxes are [x,y,width,height].
+Return ONLY JSON, no markdown:
+{"subject":"2-4 word label of the best subject, e.g. sunlit palm crown","box":[x,y,w,h],"ideal":[x,y] (where the subject center should sit for the strongest composition),"style":"thirds | center | symmetry | leading lines | frame in frame","zoom":number (suggested zoom multiple from now, 0.7 to 3, 1 means keep),"light":"short phrase about the light","mood":"one or two words","score":0-100 (how good the current framing is),"tip":"one plain sentence, max 14 words, what to do next","ideas":[up to 3 other shots visible in this scene, each {"title":"3-4 words","why":"max 8 words","box":[x,y,w,h],"ideal":[x,y],"zoom":number}]}
+Use simple everyday words.`;
+let MODEL=null;
+const NAMES={'potted plant':'plant','cell phone':'phone','dining table':'table','wine glass':'glass','tv':'screen','sports ball':'ball','traffic light':'traffic light'};
+async function loadModel(){
+ say('Loading the AI… (first time takes a few seconds)');S.live=true;
+ try{MODEL=await cocoSsd.load({base:'lite_mobilenet_v2'})}catch(e){MODEL=null;say('AI didn’t load, using the basic finder','bad')}
+ $('#scan').classList.add('busy');if(!S.dl){S.dl=1;detectLoop()}
+}
+async function detectLoop(){
+ for(;;){if(S.live){try{await detectOnce()}catch(e){}}await new Promise(r=>setTimeout(r,S.live?40:300))}
+}
+async function detectOnce(){
+ const s=src(),sw=s.videoWidth||s.naturalWidth,sh=s.videoHeight||s.naturalHeight;if(!sw)return;
+ let found=null;
+ if(MODEL){
+  let cw=sw,ch=sw/S.ar;if(ch>sh){ch=sh;cw=sh*S.ar}const z=S.hw?1:S.dz;cw/=z;ch/=z;const X0=(sw-cw)/2,Y0=(sh-ch)/2;
+  const r=await MODEL.detect(s,8,.35);let best=0;
+  r.forEach(o=>{const [x,y,w,h]=o.bbox,b=[(x-X0)/cw,(y-Y0)/ch,w/cw,h/ch],cx=b[0]+b[2]/2,cy=b[1]+b[3]/2;if(cx<0||cx>1||cy<0||cy>1)return;
+   const q=o.score*Math.sqrt(Math.min(1,b[2])*Math.min(1,b[3]))*(1-Math.hypot(cx-.5,cy-.5)*.8)*(o.class==='person'?1.3:1);
+   if(q>best){best=q;found={b,o}}});
+  if(best<.1)found=null;
+ }
+ if(found){
+  S.miss=0;const b=found.b,o=found.o,cx=b[0]+b[2]/2,cy=b[1]+b[3]/2;
+  S.box=b;S.label=(NAMES[o.class]||o.class);S.comp=55+o.score*35;
+  if(Math.abs(cx-.5)>.08||!S.sx)S.sx=cx<.5?1/3:2/3;
+  if(Math.abs(cy-.5)>.08||!S.sy)S.sy=cy<.5?1/3:2/3;
+  if(o.class==='person')S.sy=1/3;
+  S.ideal=Math.max(b[2],b[3])>.7?[.5,.5]:[S.sx,S.sy];
+  const I=S.ideal,al=Math.hypot(cx-I[0],cy-I[1])<.1,big=Math.max(b[2],b[3]);
+  if(al&&!S.still&&performance.now()>(S.zt||0)){
+   if(big<.3&&S.zoom<(S.hw?Math.min(S.hw.max,8):4)){S.zt=performance.now()+1500;setZoom(S.zoom*1.25)}
+   else if(big>.92&&S.zoom>(S.hw?S.hw.min:1)){S.zt=performance.now()+1500;setZoom(S.zoom/1.2)}
+  }
+ }else if(++S.miss>4){localScan(null,true)}
+ if(S.still)S.live=false,$('#scan').classList.remove('busy');
+}
+function scan(){
+ S.live=!S.live;$('#scan').classList.toggle('busy',S.live);
+ if(S.live){S.miss=0;say('Finding your shot…')}else{S.box=null;S.d=null;S.ideal=null;S.lockT=0;say('Paused. Tap ✦ to start')}
+}
+function box4(a,f){return Array.isArray(a)&&a.length>=4?[cl(a[0],-.2,1.2),cl(a[1],-.2,1.2),cl(a[2],.03,1.4),cl(a[3],.03,1.4)]:f}
+function pt2(a,f){return Array.isArray(a)&&a.length>=2?[cl(a[0]),cl(a[1])]:f}
+function apply(j){
+ S.idx=0;S.box=box4(j.box,[.3,.3,.4,.4]);S.d=null;S.ideal=pt2(j.ideal,[1/3,1/3]);S.label=String(j.subject||'Main subject').slice(0,32);S.comp=cl(j.score,0,100);S.cur=j;
+ const z=+j.zoom||1;if(Math.abs(z-1)>.15)setZoom(S.zoom*cl(z,.7,3));
+ sheet(j);
+}
+function localScan(code,quiet){
+ const c=grab(64);if(!c){say('No camera picture yet','bad');return}
+ const W=64,H=c.height,d=c.getContext('2d').getImageData(0,0,W,H).data,gx=8,gy=Math.round(8/S.ar);let cells=[],mx=0;
+ for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){let e=0,n=0;for(let y=j*H/gy|0;y<(j+1)*H/gy-1;y++)for(let q=i*W/gx|0;q<(i+1)*W/gx-1;q++){const k=(y*W+q)*4,k2=k+4,k3=k+W*4;e+=Math.abs(d[k]-d[k2])+Math.abs(d[k+1]-d[k2+1])+Math.abs(d[k]-d[k3])+Math.abs(d[k+2]-d[k3+2]);n++}e/=n;cells.push([i,j,e]);mx=Math.max(mx,e)}
+ const hot=cells.filter(c=>c[2]>mx*.6);let x0=9,x1=-1,y0=99,y1=-1,sx=0,sy=0,sw=0;hot.forEach(([i,j,e])=>{x0=Math.min(x0,i);x1=Math.max(x1,i);y0=Math.min(y0,j);y1=Math.max(y1,j);sx+=(i+.5)*e;sy+=(j+.5)*e;sw+=e});
+ S.box=[x0/gx,y0/gy,(x1-x0+1)/gx,(y1-y0+1)/gy];S.d=null;S.label='Main subject';S.comp=null;
+ const cx=sx/sw/gx,cy=sy/sw/gy;S.ideal=[cx<.5?1/3:2/3,cy<.5?1/3:2/3];
+ const msg={not_granted:'AI is off, so I used the basic finder.',rate_limited:'Too many scans, so I used the basic finder.',none:'AI isn’t available here, so I used the basic finder.'}[code]||'Basic finder used.';
+ if(!quiet)sheet({subject:'Main subject',light:'–',mood:'–',style:'thirds',tip:msg,ideas:[]});
+}
+function sheet(j){
+ const s=$('#sheet');s.hidden=false;s.innerHTML='';
+ const h=document.createElement('h3');h.innerHTML='<span></span><span style="color:var(--gold)"></span>';h.children[0].textContent=j.subject||S.label;h.children[1].textContent=j.score!=null?Math.round(j.score)+'/100':'';s.appendChild(h);
+ const add=(k,t)=>{if(!t||t==='–')return;const p=document.createElement('p');p.innerHTML='<b></b> ';p.firstChild.textContent=k;p.append(String(t));s.appendChild(p)};
+ add('Tip',j.tip);add('Light',j.light);add('Mood',j.mood);add('Style',j.style);
+ const ideas=(j.ideas||[]).slice(0,3);if(ideas.length){const w=document.createElement('div');w.id='ideas';ideas.forEach(o=>{const b=document.createElement('button');b.className='chip';b.textContent=o.title;b.title=o.why;b.onclick=()=>{S.box=box4(o.box,S.box);S.d=null;S.ideal=pt2(o.ideal,S.ideal);S.label=o.title;S.lockT=0;const z=+o.zoom||1;if(Math.abs(z-1)>.15)setZoom(S.zoom*cl(z,.7,3));say(o.why)};w.appendChild(b)});s.appendChild(w)}
+}
+/* take photo */
+function shoot(){
+ const c=grab(0,1);if(!c)return;S.cool=performance.now()+3000;S.lockT=0;S.vb=0;
+ const f=$('#flash');f.style.opacity=.9;setTimeout(()=>f.style.opacity=0,120);
+ c.toBlob(b=>{const u=URL.createObjectURL(b);S.shots.push({b,u});if(window.AndroidBridge){const fr=new FileReader();fr.onload=()=>AndroidBridge.save(fr.result);fr.readAsDataURL(b)}$('#thumb').style.backgroundImage='url('+u+')'},'image/jpeg',.92)
+}
+$('#shut').onclick=shoot;$('#scan').onclick=scan;
+$('#thumb').onclick=()=>{const s=S.shots[S.shots.length-1];if(!s)return;$('#vi').src=s.u;$('#view').hidden=false};
+$('#cl').onclick=()=>$('#view').hidden=true;
+$('#sv').onclick=async()=>{const s=S.shots[S.shots.length-1];try{const d=await claude.use('downloads');if(!d)throw 0;await d.save({filename:'frame-coach-'+Date.now()+'.jpg',data:s.b})}catch(e){$('#sv').textContent='Press and hold the photo to save it'}};
+$('#ar').onclick=()=>{S.ai=(S.ai+1)%ARS.length;S.ar=ARS[S.ai][0];$('#ar').textContent=ARS[S.ai][1];S.box=null;S.d=null;S.prev=null;fit()};
+$('#gr').onclick=e=>{S.grid=!S.grid;e.target.classList.toggle('on',S.grid)};
+$('#au').onclick=e=>{S.auto=!S.auto;e.target.classList.toggle('on',S.auto)};
+$('#go').onclick=start;
+$('#pick').onclick=()=>$('#file').click();
+$('#snap').onclick=$('#np').onclick=()=>{$('#cam').value='';$('#cam').click()};
+$('#cam').onchange=$('#file').onchange=e=>{const f=e.target.files[0];if(!f)return;st.src=URL.createObjectURL(f);st.onload=()=>{const first=!S.still;S.still=st;st.hidden=false;v.hidden=true;$('#start').hidden=true;$('#np').hidden=false;S.hw=null;S.box=null;S.d=null;S.ideal=null;S.comp=null;S.dz=1;S.zoom=1;st.style.transform='';$('#sheet').hidden=true;S.live=true;S.miss=0;$('#scan').classList.add('busy');buildZoom();if(first)ready();else{fit();say('Tap ✦ to find your shot')}}};
+$('#sv').onclick=()=>{const s=S.shots[S.shots.length-1];if(!s)return;const a=document.createElement('a');a.href=s.u;a.download='frame-coach-'+Date.now()+'.jpg';document.body.appendChild(a);a.click();a.remove()};
+</script></body></html>
